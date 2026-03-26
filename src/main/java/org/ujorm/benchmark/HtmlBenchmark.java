@@ -47,7 +47,7 @@ public class HtmlBenchmark {
     /** Benchmark for Ujorm Element HTML builder */
     @Benchmark
     public String benchmarkUjormElement() {
-        var writer = new StringBuilder();
+        var writer = new StringBuilder(512);
 
         var config = HtmlConfig.ofDefault();
         try (var html = AbstractHtmlElement.of(writer, config)) {

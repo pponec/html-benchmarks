@@ -1,6 +1,6 @@
-Framework|Throughput [ops/s]|Allocation [B/op]
-Jte|618870,459|8880,011
-UjormElement|1000886,689|2464,007
-HtmlFlow|713392,392|5640,010
-J2html|993989,088|4840,007
-StringBuilder|6676553,259|1568,001
+Framework|Throughput [ops/s]|Allocation [B/op]|JAR Size [kB]
+Jte|625866,199|8880,011|79
+UjormElement|1110856,062|1616,006|114
+HtmlFlow|705945,376|5640,010|52
+J2html|1037662,425|4840,007|198
+StringBuilder|6678443,691|1568,001|0
