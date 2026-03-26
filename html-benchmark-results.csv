@@ -1,0 +1,6 @@
+Framework|Throughput [ops/s]|Allocation [B/op]
+Jte|618870,459|8880,011
+UjormElement|1000886,689|2464,007
+HtmlFlow|713392,392|5640,010
+J2html|993989,088|4840,007
+StringBuilder|6676553,259|1568,001
