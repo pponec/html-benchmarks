@@ -7,6 +7,52 @@
   <build>
     <plugins>
       <plugin>
+        <groupId>org.jetbrains.kotlin</groupId>
+        <artifactId>kotlin-maven-plugin</artifactId>
+        <version>${kotlin.version}</version>
+        <executions>
+          <execution>
+            <id>compile</id>
+            <phase>process-sources</phase>
+            <goals>
+              <goal>compile</goal>
+            </goals>
+            <configuration>
+              <sourceDirs>
+                <sourceDir>${project.basedir}/src/main/java</sourceDir>
+              </sourceDirs>
+              <jvmTarget>25</jvmTarget>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+      <plugin>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <version>3.11.0</version>
+        <executions>
+          <execution>
+            <id>default-compile</id>
+            <phase>none</phase>
+          </execution>
+          <execution>
+            <id>java-compile</id>
+            <phase>compile</phase>
+            <goals>
+              <goal>compile</goal>
+            </goals>
+          </execution>
+        </executions>
+        <configuration>
+          <annotationProcessorPaths>
+            <path>
+              <groupId>org.openjdk.jmh</groupId>
+              <artifactId>jmh-generator-annprocess</artifactId>
+              <version>${jmh.version}</version>
+            </path>
+          </annotationProcessorPaths>
+        </configuration>
+      </plugin>
+      <plugin>
         <artifactId>maven-shade-plugin</artifactId>
         <version>3.5.1</version>
         <executions>
@@ -26,19 +72,6 @@
           </execution>
         </executions>
       </plugin>
-      <plugin>
-        <artifactId>maven-compiler-plugin</artifactId>
-        <version>3.11.0</version>
-        <configuration>
-          <annotationProcessorPaths>
-            <path>
-              <groupId>org.openjdk.jmh</groupId>
-              <artifactId>jmh-generator-annprocess</artifactId>
-              <version>${jmh.version}</version>
-            </path>
-          </annotationProcessorPaths>
-        </configuration>
-      </plugin>
     </plugins>
   </build>
   <dependencies>
@@ -51,9 +84,10 @@
   </dependencies>
   <properties>
     <jmh.version>1.37</jmh.version>
-    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-    <maven.compiler.target>21</maven.compiler.target>
+    <maven.compiler.target>25</maven.compiler.target>
     <ujorm.version>3.0.0-SNAPSHOT</ujorm.version>
-    <maven.compiler.source>21</maven.compiler.source>
+    <kotlin.version>2.3.20</kotlin.version>
+    <maven.compiler.source>25</maven.compiler.source>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
   </properties>
 </project>

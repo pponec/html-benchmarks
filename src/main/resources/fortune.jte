@@ -1,9 +1,16 @@
-@import org.ujorm.benchmark.Fortune
-@import java.util.List
-@param List<Fortune> fortunes
+@import org.ujorm.benchmark.HtmlBenchmark.Fortune
+@param java.util.List<Fortune> fortunes
 
-<html><body><table>
-@for(var fortune : fortunes)
-<tr><td>${fortune.id()}</td><td>${fortune.message()}</td></tr>
-@endfor
-</table></body></html>
+<html>
+<body>
+    <table>
+        @for(Fortune fortune : fortunes)
+        <tr>
+            <td>${fortune.id()}</td>
+            <td>${fortune.message()}</td>
+            <td>${fortune.author()}</td>
+        </tr>
+        @endfor
+    </table>
+</body>
+</html>

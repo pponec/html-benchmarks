@@ -43,19 +43,20 @@ public class HtmlBenchmark {
     public void setup() {
         this.config = HtmlConfig.ofDefault();
         this.fortunes = List.of(
-                new Fortune(101, "A computer scientist is someone who fixes things that aren't broken."),
-                new Fortune(102, "Feature: A bug with seniority."),
-                new Fortune(103, "To err is human, but to really foul things up you need a computer."),
-                new Fortune(104, "Programmers are tools for converting caffeine into code."),
-                new Fortune(105, "There are 10 types of people: those who understand binary and those who don't."),
-                new Fortune(106, "Debugging: Being the detective in a crime movie where you are also the murderer."),
-                new Fortune(107, "It's not a bug, it's an undocumented feature."),
-                new Fortune(108, "Weeks of coding can save you hours of planning."),
-                new Fortune(109, "If at first you don’t succeed, call it version 1.0."),
-                new Fortune(110, "Computers make very fast, very accurate mistakes.")
+                new Fortune(101, "John", "A computer scientist is someone who fixes things that aren't broken."),
+                new Fortune(102, "Emily", "Feature: A bug with seniority."),
+                new Fortune(103, "Michael", "To err is human, but to really foul things up you need a computer."),
+                new Fortune(104, "Sarah", "Programmers are tools for converting caffeine into code."),
+                new Fortune(105, "David", "There are 10 types of people: those who understand binary and those who don't."),
+                new Fortune(106, "Jessica", "Debugging: Being the detective in a crime movie where you are also the murderer."),
+                new Fortune(107, "James", "It's not a bug, it's an undocumented feature."),
+                new Fortune(108, "Lisa", "Weeks of coding can save you hours of planning."),
+                new Fortune(109, "Robert", "If at first you don’t succeed, call it version 1.0."),
+                new Fortune(110, "Jane", "Computers make very fast, very accurate mistakes.")
         );
         var codeResolver = new DirectoryCodeResolver(Path.of("src/main/resources"));
         this.jteEngine = TemplateEngine.create(codeResolver, ContentType.Html);
+        this.jteEngine.setTrimControlStructures(true);
 
         globalCharCount.reset();
     }
@@ -78,6 +79,7 @@ public class HtmlBenchmark {
                         try (var row = table.addTableRow()) {
                             row.addTableDetail().addText(fortune.id());
                             row.addTableDetail().addText(fortune.message());
+                            row.addTableDetail().addText(fortune.author());
                         }
                     }
                 }
@@ -94,7 +96,8 @@ public class HtmlBenchmark {
                             table(
                                     each(this.fortunes, fortune -> tr(
                                             td(String.valueOf(fortune.id())),
-                                            td(fortune.message())
+                                            td(fortune.message()),
+                                            td(fortune.author())
                                     ))
                             )
                     )
@@ -120,6 +123,7 @@ public class HtmlBenchmark {
                         table.tr()
                                 .td().text(String.valueOf(fortune.id())).__()
                                 .td().text(fortune.message()).__()
+                                .td().text(fortune.author()).__()
                                 .__();
                     }
                 }).__().__().__()
@@ -135,11 +139,62 @@ public class HtmlBenchmark {
         builder.append("<html><body><table>");
         for (var fortune : this.fortunes) {
             builder.append("<tr><td>").append(fortune.id()).append("</td>")
-                    .append("<td>").append(fortune.message()).append("</td></tr>");
+                    .append("<td>").append(fortune.message()).append("</td>")
+                    .append("<td>").append(fortune.author()).append("</td></tr>");
         }
         builder.append("</table></body></html>");
         globalCharCount.add(builder.length());
         bh.consume(builder);
+    }
+
+    /** Benchmark for Dom4j full DOM tree builder */
+    @Benchmark
+    public void benchmarkDom4j(Blackhole bh) throws Exception {
+        var document = org.dom4j.DocumentHelper.createDocument();
+        var html = document.addElement("html");
+        var body = html.addElement("body");
+        var table = body.addElement("table");
+
+        for (var fortune : this.fortunes) {
+            var tr = table.addElement("tr");
+            tr.addElement("td").addText(String.valueOf(fortune.id()));
+            tr.addElement("td").addText(fortune.message());
+            tr.addElement("td").addText(fortune.author());
+        }
+
+        try (var writer = new CountingBlackholeWriter(bh, globalCharCount)) {
+            var outputFormat = org.dom4j.io.OutputFormat.createCompactFormat();
+            outputFormat.setSuppressDeclaration(true);
+            var xmlWriter = new org.dom4j.io.XMLWriter(writer, outputFormat);
+            xmlWriter.write(document);
+        }
+    }
+
+    /** Benchmark for Jsoup DOM builder */
+    @Benchmark
+    public void benchmarkJsoup(Blackhole bh) {
+        var doc = org.jsoup.nodes.Document.createShell("");
+        doc.outputSettings().prettyPrint(false);
+        var table = doc.body().appendElement("table");
+
+        for (var fortune : this.fortunes) {
+            var tr = table.appendElement("tr");
+            tr.appendElement("td").text(String.valueOf(fortune.id()));
+            tr.appendElement("td").text(fortune.message());
+            tr.appendElement("td").text(fortune.author());
+        }
+
+        var result = doc.outerHtml();
+        globalCharCount.add(result.length());
+        bh.consume(result);
+    }
+
+    /** Benchmark for Kotlinx HTML DSL */
+    @Benchmark
+    public void benchmarkKotlinxHtml(Blackhole bh) throws IOException {
+        try (var writer = new CountingBlackholeWriter(bh, globalCharCount)) {
+            KotlinHtml.INSTANCE.renderFortunes(this.fortunes, writer);
+        }
     }
 
     /** A custom Writer that feeds Blackhole and safely counts characters */
@@ -165,12 +220,15 @@ public class HtmlBenchmark {
 
     /** Represents a fortune message entity */
     public record Fortune(
-            /** Returns the unique identifier of the fortune */
+            /** Gets the id */
             int id,
 
-            /** Returns the message content of the fortune */
+            /** Gets the author's first name */
+            String author,
+
+            /** Gets the message */
             String message
-    ) {    }
+    ) { }
 
     /** Run the benchmark programmatically */
     public static void main(String[] args) throws RunnerException {

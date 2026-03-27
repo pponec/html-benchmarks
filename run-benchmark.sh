@@ -4,18 +4,23 @@
 RAW_LOG="jmh-raw-output-$RANDOM.log"
 CSV_FILE="html-benchmark-results.csv"
 
+# Silence the "sun.misc.Unsafe" warning for internal Maven processes (like Guice)
+export MAVEN_OPTS="--sun-misc-unsafe-memory-access=allow"
+
 # 1. Compile and build the project
 echo "Compiling the project..."
 ./mvnw clean package -q
 
 # --- FUNCTION FOR JAR SIZE (in kB) ---
-# Uses maven-dependency-plugin to copy a specific artifact and its transitive dependencies
+# Uses maven-dependency-plugin to copy a specific artifact
 # into an isolated temporary folder, measures the folder size, and cleans up.
 get_framework_size_kb() {
     local artifact_id=$1
     local temp_dir="temp-deps-$RANDOM"
 
     # Run Maven to copy dependencies for the given artifact into a temporary directory
+    # The includeArtifactIds parameter strictly filters only the specified JAR,
+    # effectively ignoring transitive dependencies like kotlin-stdlib.
     ./mvnw dependency:copy-dependencies \
         -DincludeArtifactIds="$artifact_id" \
         -DoutputDirectory="$temp_dir" \
@@ -34,11 +39,13 @@ get_framework_size_kb() {
 
 echo "Calculating pure framework sizes in kB (without JMH overhead)..."
 # Map framework names (from JMH output) to their Maven Artifact IDs
-# Note: Ensure these match the artifactIds in your pom.xml
 SIZE_UJORM=$(get_framework_size_kb "ujo-web")
 SIZE_J2HTML=$(get_framework_size_kb "j2html")
 SIZE_HTMLFLOW=$(get_framework_size_kb "htmlflow")
 SIZE_JTE=$(get_framework_size_kb "jte")
+SIZE_DOM4J=$(get_framework_size_kb "dom4j")
+SIZE_JSOUP=$(get_framework_size_kb "jsoup")
+SIZE_KOTLINX=$(get_framework_size_kb "kotlinx-html-jvm")
 SIZE_STRINGBUILDER="0" # Native JDK, no external dependencies
 
 # Export sizes so AWK can read them from environment variables
@@ -46,11 +53,15 @@ export SIZE_UjormElement=$SIZE_UJORM
 export SIZE_J2html=$SIZE_J2HTML
 export SIZE_HtmlFlow=$SIZE_HTMLFLOW
 export SIZE_Jte=$SIZE_JTE
+export SIZE_Dom4j=$SIZE_DOM4J
+export SIZE_Jsoup=$SIZE_JSOUP
+export SIZE_KotlinxHtml=$SIZE_KOTLINX
 export SIZE_StringBuilder=$SIZE_STRINGBUILDER
 
 # 2. Run the benchmark, tee the output to both the console and the temporary log file
 echo "Running JMH benchmark..."
-java -jar target/benchmarks.jar -prof gc | tee "$RAW_LOG"
+# java -jar target/benchmarks.jar -prof gc | tee "$RAW_LOG"
+java --sun-misc-unsafe-memory-access=allow -jar target/benchmarks.jar -prof gc -jvmArgsAppend "--sun-misc-unsafe-memory-access=allow" | tee "$RAW_LOG"
 
 # 3. Process the log using AWK to generate the CSV format (now with JAR Size in kB)
 echo "Building the CSV summary table..."
