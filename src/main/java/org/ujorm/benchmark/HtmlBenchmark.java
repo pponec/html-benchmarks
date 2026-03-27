@@ -127,6 +127,15 @@ public class HtmlBenchmark {
         return output.toString();
     }
 
+    /** Represents a fortune message entity */
+    public record Fortune(
+            /** Returns the unique identifier of the fortune */
+            int id,
+
+            /** Returns the message content of the fortune */
+            String message
+    ) {    }
+
     /** Run the benchmark programmatically */
     public static void main(String[] args) throws RunnerException {
         var opt = new OptionsBuilder()
