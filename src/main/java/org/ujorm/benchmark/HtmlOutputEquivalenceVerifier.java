@@ -109,15 +109,17 @@ final class HtmlOutputEquivalenceVerifier {
     }
 
     private static String renderStringBuilder(List<HtmlBenchmark.Fortune> fortunes) {
-        var builder = new StringBuilder(2048);
-        builder.append("<html><body><table>");
+        var html = new SafeHtmlStringBuilder(2048);
+        html.raw("<html><body><table>");
         for (var fortune : fortunes) {
-            builder.append("<tr><td>").append(fortune.id()).append("</td>")
-                    .append("<td>").append(fortune.message()).append("</td>")
-                    .append("<td>").append(fortune.author()).append("</td></tr>");
+            html.openTag("tr")
+                    .element("td", fortune.id())
+                    .element("td", fortune.message())
+                    .element("td", fortune.author())
+                    .closeTag("tr");
         }
-        builder.append("</table></body></html>");
-        return builder.toString();
+        html.raw("</table></body></html>");
+        return html.toString();
     }
 
     private static String renderDom4j(List<HtmlBenchmark.Fortune> fortunes) throws IOException {

@@ -136,16 +136,19 @@ public class HtmlBenchmark {
     /** Benchmark for standard StringBuilder fallback */
     @Benchmark
     public void benchmarkStringBuilder(Blackhole bh) {
-        var builder = new StringBuilder(2048);
-        builder.append("<html><body><table>");
+        var html = new SafeHtmlStringBuilder(2048);
+        html.raw("<html><body><table>");
         for (var fortune : this.fortunes) {
-            builder.append("<tr><td>").append(fortune.id()).append("</td>")
-                    .append("<td>").append(fortune.message()).append("</td>")
-                    .append("<td>").append(fortune.author()).append("</td></tr>");
+            html.openTag("tr")
+                    .element("td", fortune.id())
+                    .element("td", fortune.message())
+                    .element("td", fortune.author())
+                    .closeTag("tr");
         }
-        builder.append("</table></body></html>");
-        globalCharCount.add(builder.length());
-        bh.consume(builder);
+        html.raw("</table></body></html>");
+        var result = html.toString();
+        globalCharCount.add(result.length());
+        bh.consume(result);
     }
 
     /** Benchmark for Dom4j full DOM tree builder */
