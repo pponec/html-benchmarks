@@ -59,6 +59,7 @@ public class HtmlBenchmark {
         this.jteEngine.setTrimControlStructures(true);
 
         globalCharCount.reset();
+        HtmlOutputEquivalenceVerifier.verifyEquivalentHtmlOutputs(this.fortunes, this.config, this.jteEngine);
     }
 
     /** Print the character count after each iteration */
@@ -173,9 +174,9 @@ public class HtmlBenchmark {
     /** Benchmark for Jsoup DOM builder */
     @Benchmark
     public void benchmarkJsoup(Blackhole bh) {
-        var doc = org.jsoup.nodes.Document.createShell("");
+        var doc = new org.jsoup.nodes.Document("");
         doc.outputSettings().prettyPrint(false);
-        var table = doc.body().appendElement("table");
+        var table = doc.appendElement("html").appendElement("body").appendElement("table");
 
         for (var fortune : this.fortunes) {
             var tr = table.appendElement("tr");
@@ -238,4 +239,5 @@ public class HtmlBenchmark {
                 .build();
         new Runner(opt).run();
     }
+
 }
