@@ -2,27 +2,21 @@ package org.ujorm.benchmark;
 
 import gg.jte.ContentType;
 import gg.jte.TemplateEngine;
-import gg.jte.output.WriterOutput;
 import gg.jte.resolve.DirectoryCodeResolver;
-import htmlflow.HtmlFlow;
 import org.openjdk.jmh.annotations.*;
 import org.openjdk.jmh.infra.BenchmarkParams;
 import org.openjdk.jmh.infra.Blackhole;
 import org.openjdk.jmh.runner.Runner;
 import org.openjdk.jmh.runner.RunnerException;
 import org.openjdk.jmh.runner.options.OptionsBuilder;
-import org.ujorm.tools.web.AbstractHtmlElement;
 import org.ujorm.tools.xml.config.HtmlConfig;
 
 import java.io.IOException;
 import java.io.Writer;
 import java.nio.file.Path;
 import java.util.List;
-import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.LongAdder;
-
-import static j2html.TagCreator.*;
 
 /** JMH benchmark for HTML generation performance */
 @State(Scope.Benchmark)
@@ -33,7 +27,13 @@ import static j2html.TagCreator.*;
 @Fork(1)
 public class HtmlBenchmark {
 
+    @Param({"SIMPLE_10", "SIMPLE_100", "SIMPLE_1000", "COMPLEX_100"})
+    public Scenario scenario;
+
     private List<Fortune> fortunes;
+    private List<String> menuItems;
+    private boolean showPromo;
+    private BenchmarkModel model;
     private TemplateEngine jteEngine;
     private HtmlConfig config;
     private final LongAdder globalCharCount = new LongAdder();
@@ -42,7 +42,7 @@ public class HtmlBenchmark {
     @Setup
     public void setup() {
         this.config = HtmlConfig.ofDefault();
-        this.fortunes = List.of(
+        var baseFortunes = List.of(
                 new Fortune(101, "John", "A computer scientist is someone who fixes things that aren't broken."),
                 new Fortune(102, "Emily", "Feature: A bug with seniority."),
                 new Fortune(103, "Michael", "To err is human, but to really foul things up you need a computer."),
@@ -54,12 +54,18 @@ public class HtmlBenchmark {
                 new Fortune(109, "Robert", "If at first you don’t succeed, call it version 1.0."),
                 new Fortune(110, "Jane", "Computers make very fast, very accurate mistakes.")
         );
+        this.fortunes = createFortunes(baseFortunes, scenario);
+        this.menuItems = List.of("Home", "Fortunes", "Authors", "Stats");
+        this.showPromo = scenario == Scenario.COMPLEX_100;
+        this.model = new BenchmarkModel(this.fortunes, this.menuItems, this.showPromo);
         var codeResolver = new DirectoryCodeResolver(Path.of("src/main/resources"));
         this.jteEngine = TemplateEngine.create(codeResolver, ContentType.Html);
         this.jteEngine.setTrimControlStructures(true);
 
         globalCharCount.reset();
-        HtmlOutputEquivalenceVerifier.verifyEquivalentHtmlOutputs(this.fortunes, this.config, this.jteEngine);
+        HtmlOutputEquivalenceVerifier.verifyEquivalentHtmlOutputs(
+                this.fortunes, this.menuItems, this.showPromo, this.config, this.jteEngine, this.scenario.isComplex()
+        );
     }
 
     /** Print the character count after each iteration */
@@ -72,19 +78,8 @@ public class HtmlBenchmark {
     /** Benchmark for Ujorm Element HTML builder */
     @Benchmark
     public void benchmarkUjormElement(Blackhole bh) throws IOException {
-        try (var writer = new CountingBlackholeWriter(bh, globalCharCount);
-             var html = AbstractHtmlElement.of(writer, config)) {
-            try (var body = html.addBody()) {
-                try (var table = body.addTable()) {
-                    for (var fortune : this.fortunes) {
-                        try (var row = table.addTableRow()) {
-                            row.addTableDetail().addText(fortune.id());
-                            row.addTableDetail().addText(fortune.message());
-                            row.addTableDetail().addText(fortune.author());
-                        }
-                    }
-                }
-            }
+        try (var writer = new CountingBlackholeWriter(bh, globalCharCount)) {
+            UjormRenderer.render(model, scenario, config, writer);
         }
     }
 
@@ -92,17 +87,7 @@ public class HtmlBenchmark {
     @Benchmark
     public void benchmarkJ2html(Blackhole bh) throws IOException {
         try (var writer = new CountingBlackholeWriter(bh, globalCharCount)) {
-            html(
-                    body(
-                            table(
-                                    each(this.fortunes, fortune -> tr(
-                                            td(String.valueOf(fortune.id())),
-                                            td(fortune.message()),
-                                            td(fortune.author())
-                                    ))
-                            )
-                    )
-            ).render(writer);
+            J2htmlRenderer.render(model, scenario, writer);
         }
     }
 
@@ -110,25 +95,14 @@ public class HtmlBenchmark {
     @Benchmark
     public void benchmarkJte(Blackhole bh) throws IOException {
         try (var writer = new CountingBlackholeWriter(bh, globalCharCount)) {
-            jteEngine.render("fortune.jte", Map.of("fortunes", this.fortunes), new WriterOutput(writer));
+            JteRenderer.render(model, scenario, jteEngine, writer);
         }
     }
 
     /** Benchmark for HtmlFlow API */
     @Benchmark
     public void benchmarkHtmlFlow(Blackhole bh) {
-        var result = HtmlFlow.view(view -> view
-                .html().body().table()
-                .of(table -> {
-                    for (var fortune : this.fortunes) {
-                        table.tr()
-                                .td().text(String.valueOf(fortune.id())).__()
-                                .td().text(fortune.message()).__()
-                                .td().text(fortune.author()).__()
-                                .__();
-                    }
-                }).__().__().__()
-        ).render();
+        var result = HtmlFlowRenderer.render(model, scenario);
         globalCharCount.add(result.length());
         bh.consume(result);
     }
@@ -136,17 +110,7 @@ public class HtmlBenchmark {
     /** Benchmark for standard StringBuilder fallback */
     @Benchmark
     public void benchmarkStringBuilder(Blackhole bh) {
-        var html = new SafeHtmlStringBuilder(2048);
-        html.raw("<html><body><table>");
-        for (var fortune : this.fortunes) {
-            html.openTag("tr")
-                    .element("td", fortune.id())
-                    .element("td", fortune.message())
-                    .element("td", fortune.author())
-                    .closeTag("tr");
-        }
-        html.raw("</table></body></html>");
-        var result = html.toString();
+        var result = SafeStringBuilderRenderer.render(model, scenario);
         globalCharCount.add(result.length());
         bh.consume(result);
     }
@@ -154,41 +118,15 @@ public class HtmlBenchmark {
     /** Benchmark for Dom4j full DOM tree builder */
     @Benchmark
     public void benchmarkDom4j(Blackhole bh) throws Exception {
-        var document = org.dom4j.DocumentHelper.createDocument();
-        var html = document.addElement("html");
-        var body = html.addElement("body");
-        var table = body.addElement("table");
-
-        for (var fortune : this.fortunes) {
-            var tr = table.addElement("tr");
-            tr.addElement("td").addText(String.valueOf(fortune.id()));
-            tr.addElement("td").addText(fortune.message());
-            tr.addElement("td").addText(fortune.author());
-        }
-
         try (var writer = new CountingBlackholeWriter(bh, globalCharCount)) {
-            var outputFormat = org.dom4j.io.OutputFormat.createCompactFormat();
-            outputFormat.setSuppressDeclaration(true);
-            var xmlWriter = new org.dom4j.io.XMLWriter(writer, outputFormat);
-            xmlWriter.write(document);
+            Dom4jRenderer.render(model, scenario, writer);
         }
     }
 
     /** Benchmark for Jsoup DOM builder */
     @Benchmark
     public void benchmarkJsoup(Blackhole bh) {
-        var doc = new org.jsoup.nodes.Document("");
-        doc.outputSettings().prettyPrint(false);
-        var table = doc.appendElement("html").appendElement("body").appendElement("table");
-
-        for (var fortune : this.fortunes) {
-            var tr = table.appendElement("tr");
-            tr.appendElement("td").text(String.valueOf(fortune.id()));
-            tr.appendElement("td").text(fortune.message());
-            tr.appendElement("td").text(fortune.author());
-        }
-
-        var result = doc.outerHtml();
+        var result = JsoupRenderer.render(model, scenario);
         globalCharCount.add(result.length());
         bh.consume(result);
     }
@@ -197,9 +135,49 @@ public class HtmlBenchmark {
     @Benchmark
     public void benchmarkKotlinxHtml(Blackhole bh) throws IOException {
         try (var writer = new CountingBlackholeWriter(bh, globalCharCount)) {
-            KotlinHtml.INSTANCE.renderFortunes(this.fortunes, writer);
+            KotlinxHtmlRenderer.render(model, scenario, writer);
         }
     }
+
+    private static List<Fortune> createFortunes(List<Fortune> base, Scenario scenario) {
+        var result = new java.util.ArrayList<Fortune>(scenario.rowCount);
+        for (int i = 0; i < scenario.rowCount; i++) {
+            var src = base.get(i % base.size());
+            var id = src.id() * 1000 + i;
+            var author = injectSpecialCharacters(src.author() + " #" + i, i);
+            var message = injectSpecialCharacters(src.message() + " [row " + i + "]", i + 101);
+            result.add(new Fortune(id, author, message));
+        }
+        return result;
+    }
+
+    /** Inject special HTML-sensitive symbols into approximately 5% of characters. */
+    private static String injectSpecialCharacters(String input, int seed) {
+        if (input.isBlank()) {
+            return input;
+        }
+        var chars = input.toCharArray();
+        var replacements = new char[]{'<', '>', '&', '"', '\''};
+        int target = Math.max(1, chars.length / 20); // ~5%
+        int step = Math.max(1, chars.length / target);
+        int done = 0;
+        for (int pos = step / 2; pos < chars.length && done < target; pos += step) {
+            if (!Character.isWhitespace(chars[pos])) {
+                chars[pos] = replacements[Math.floorMod(seed + done, replacements.length)];
+                done++;
+            }
+        }
+        return new String(chars);
+    }
+
+    public static List<String> tokensOf(String text) {
+        return java.util.Arrays.stream(text.split(" "))
+                .filter(token -> !token.isBlank())
+                .limit(6)
+                .toList();
+    }
+
+    public record BenchmarkModel(List<Fortune> fortunes, List<String> menuItems, boolean showPromo) {}
 
     /** A custom Writer that feeds Blackhole and safely counts characters */
     private static class CountingBlackholeWriter extends Writer {
@@ -233,6 +211,25 @@ public class HtmlBenchmark {
             /** Gets the message */
             String message
     ) { }
+
+    public enum Scenario {
+        SIMPLE_10(10, false),
+        SIMPLE_100(100, false),
+        SIMPLE_1000(1000, false),
+        COMPLEX_100(100, true);
+
+        final int rowCount;
+        final boolean complexLayout;
+
+        Scenario(int rowCount, boolean complexLayout) {
+            this.rowCount = rowCount;
+            this.complexLayout = complexLayout;
+        }
+
+        boolean isComplex() {
+            return complexLayout;
+        }
+    }
 
     /** Run the benchmark programmatically */
     public static void main(String[] args) throws RunnerException {

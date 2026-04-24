@@ -18,45 +18,39 @@ This project compares the performance and memory efficiency of several Java HTML
 * **StringBuilder:** *(Native JDK baseline)*
 
 ## Test Scenarios & Metrics
-The benchmark is powered by **JMH (Java Microbenchmark Harness)** configured with the `-prof gc` profiler. The scenario dynamically builds an HTML table containing **10 rows** of data.
+The benchmark is powered by **JMH (Java Microbenchmark Harness)** configured with the `-prof gc` profiler.
 
-To closely simulate real-world web server behavior (such as writing directly to an `HttpServletResponse` output stream), the benchmark streams the output directly to a data sink (JMH Blackhole) rather than accumulating a massive `String` in memory. The table columns represent the following metrics:
+The current comparison focuses on two scalable simple scenarios:
+
+* **SIMPLE_100** - simple HTML page with a table of 100 rows.
+* **SIMPLE_1000** - same page shape, but with 1000 rows.
+
+Special HTML-sensitive characters are injected into roughly 5% of text content in all scenarios to keep escaping behavior representative of production input.
+
+To simulate real-world web server behavior, the benchmark streams output directly to a sink (JMH Blackhole) instead of building one giant in-memory string. The table columns represent:
 
 * **Throughput [ops/s]:** The number of HTML generation operations completed per second. Measured in JMH Throughput mode. **Higher is better.**
 * **Allocation [B/op] (Normalized Allocation Rate):** The exact amount of temporary Heap memory allocated in **Bytes per operation**. Measured via JMH GC profiler. Lower allocation means significantly less pressure on the Garbage Collector, resulting in lower CPU usage and fewer latency spikes. **Lower is better.**
-* **JAR Size [kB]:** The total file footprint of the framework, including all of its transitive dependencies. **Lower is better.**
-* **Maintainability Index [0-100]:** An estimated score reflecting developer ergonomics, type safety, and readiness for safe code refactoring. **Higher is better.** 
-    * *90–100 (Excellent):* Pure DSLs/Builders (e.g., `Kotlinx.html`, `UjormElement`). Compiler-enforced HTML structure, automatic tag closures, and native IDE refactoring across the codebase.
-    * *70–89 (Good):* Fluent APIs/Templates (e.g., `HtmlFlow`, `JTE`). Strong type safety, but requires context-switching (templates) or creates complex, deeply nested functional callbacks.
-    * *50–69 (Moderate):* String-based Trees (e.g., `Jsoup`, `Dom4j`). Safe variable bindings, but HTML tag names are plain strings lacking compile-time validation (typos caught only at runtime).
-    * *0–49 (Poor):* Manual Concatenation (e.g., `StringBuilder`). High risk of malformed HTML, XSS vulnerabilities, and zero structural refactoring support.
+* **JAR Size [kB]:** The total file footprint of the framework dependency artifact. **Lower is better.**
 
 ## Benchmark Results
 
-The frameworks are sorted by their **Throughput** (highest performance to lowest). `StringBuilder` is included purely as an absolute raw-performance baseline.
+The libraries are sorted by **SIMPLE_100 throughput** (highest to lowest). Values are rounded to whole numbers.
 
-| Library | Throughput<br/>[ops/s] | Allocation<br/>[B/op] | JAR Size<br/>[kB] | Maintainability<br/>[0-100] |
-|:--------|-----------------------:|----------------------:|------------------:|----------------------------:|
-| StringBuilder *(baseline)* | 1,121,988 | 6,200 | 0 | 20 |
-| Jte | 377,476 | 2,640 | 79 | 70 |
-| HtmlFlow | 181,516 | 29,472 | 52 | 85 |
-| Jsoup | 165,280 | 10,120 | 496 | 60 |
-| KotlinxHtml | 138,919 | 6,432 | 825 | 95 |
-| J2html | 114,293 | 13,920 | 198 | 80 |
-| **UjormElement** | **103,461** | **2,880** | **115** | **90** |
-| Dom4j | 77,936 | 13,016 | 324 | 55 |
+| Library | JAR Size [kB] | SIMPLE_100 Throughput [ops/s] | SIMPLE_100 Allocation [B/op] | SIMPLE_1000 Throughput [ops/s] | SIMPLE_1000 Allocation [B/op] |
+|:--------|--------------:|------------------------------:|-----------------------------:|-------------------------------:|------------------------------:|
+| Jte | 79 | 33,830 | 7,200 | 3,538 | 50,402 |
+| StringBuilder *(baseline)* | 0 | 24,989 | 94,152 | 2,855 | 845,859 |
+| Jsoup | 496 | 13,499 | 143,193 | 1,636 | 1,290,718 |
+| HtmlFlow | 52 | 12,512 | 646,753 | 1,337 | 5,246,890 |
+| KotlinxHtml | 825 | 12,205 | 67,873 | 1,268 | 627,319 |
+| J2html | 198 | 11,460 | 124,657 | 1,086 | 1,229,822 |
+| **UjormElement** | **124** | **10,203** | **28,841** | **1,060** | **244,128** |
+| Dom4j | 324 | 6,365 | 166,553 | 647 | 1,616,589 |
 
-> **Disclaimer:** The *Maintainability Index* values and their corresponding evaluation criteria were generated objectively by the AI model **Gemini PRO** without any manual intervention or bias from the author.
+### Evaluation
 
-## Comprehensive Evaluation & Key Takeaways
-
-When choosing an HTML generation library, the decision often comes down to balancing raw performance, system resource constraints, and developer experience.
-
-* **Raw Performance as a Critical Metric:** In high-traffic applications, throughput is a non-negotiable criterion. If absolute speed is the primary goal, compiled template engines are the clear winners. **JTE** heavily dominates the throughput category because it pre-compiles text into highly optimized Java bytecode, bypassing the overhead of instantiating object trees entirely.
-* **Memory Load and the Garbage Collector (GC):** Frameworks that allocate excessive temporary objects (like **HtmlFlow** with nearly 30 kB per operation) will inevitably trigger frequent Garbage Collector cycles. These GC pauses can introduce significant latency spikes in production. In this regard, **JTE** and **UjormElement** are the absolute champions. Ujorm allocates a mere 2,880 B/op, offering a highly stable memory profile that keeps the GC largely inactive, ensuring predictable response times.
-* **Developer Experience & API Ergonomics:** While templates excel in performance, they inherently compromise on developer ergonomics. Using a template engine forces a context switch out of the native Java/Kotlin language into a specialized template syntax. On the other hand, pure code builders (like **Kotlinx.html**, **j2html**, or **Ujorm**) keep the developer completely within the language. This provides vastly superior IDE support, seamless refactoring, compile-time type safety, and natural integration with existing business logic.
-* **The DOM Overhead:** Libraries like **Dom4j** and **Jsoup** are incredibly powerful for parsing and manipulating existing HTML/XML, but they are not optimal for pure generation. They must build and hold the entire Document Object Model in memory before rendering it, which explains their higher memory footprints and generally lower throughput compared to streaming APIs.
-* **Conclusion:** If peak performance is paramount and context-switching is acceptable, **JTE** is the superior choice. For projects utilizing Kotlin, **Kotlinx.html** offers an unbeatable, elegant DSL. However, if you require a pure Java solution that maximizes developer ergonomics, avoids external template files, and enforces strict memory discipline to prevent GC pauses, **UjormElement** strikes an excellent balance.
+`Jte` delivers the strongest overall performance profile in both tested sizes, combining high throughput with very low allocation. `UjormElement` remains competitive in throughput and stands out with strong memory discipline among Java builder-style APIs, especially compared to most DOM-based or callback-heavy alternatives. `StringBuilder` is still a useful raw baseline, but it trades away API safety and maintainability for speed.
 
 ---
 

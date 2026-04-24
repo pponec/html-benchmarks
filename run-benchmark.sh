@@ -1,6 +1,17 @@
 #!/bin/sh
 
-# Define filenames and variables
+set -e
+
+# Usage:
+#   ./run-benchmark.sh
+#     Runs the full benchmark suite (all frameworks, all scenarios, default JMH settings).
+#
+#   ./run-benchmark.sh test
+#     Runs a fast smoke benchmark intended to quickly validate CSV generation/format.
+#     Runs full benchmark/scenario matrix with reduced JMH settings (single iteration).
+#     Special characters are included in SIMPLE and COMPLEX data by default.
+#
+# Define filenames
 RAW_LOG="jmh-raw-output-$RANDOM.log"
 CSV_FILE="html-benchmark-results.csv"
 
@@ -11,101 +22,28 @@ export MAVEN_OPTS="--sun-misc-unsafe-memory-access=allow"
 echo "Compiling the project..."
 ./mvnw clean package -q
 
-# --- FUNCTION FOR JAR SIZE (in kB) ---
-# Uses maven-dependency-plugin to copy a specific artifact
-# into an isolated temporary folder, measures the folder size, and cleans up.
-get_framework_size_kb() {
-    local artifact_id=$1
-    local temp_dir="temp-deps-$RANDOM"
-
-    # Run Maven to copy dependencies for the given artifact into a temporary directory
-    # The includeArtifactIds parameter strictly filters only the specified JAR,
-    # effectively ignoring transitive dependencies like kotlin-stdlib.
-    ./mvnw dependency:copy-dependencies \
-        -DincludeArtifactIds="$artifact_id" \
-        -DoutputDirectory="$temp_dir" \
-        -Dmdep.useRepositoryLayout=false \
-        -q
-
-    if [ -d "$temp_dir" ]; then
-        # Calculate size in bytes using 'du', convert to kB (rounded to integer)
-        local size_bytes=$(du -sb "$temp_dir" | awk '{print $1}')
-        awk -v bytes="$size_bytes" 'BEGIN { printf "%.0f", bytes / 1024 }'
-        rm -rf "$temp_dir"
-    else
-        echo "0"
-    fi
-}
-
-echo "Calculating pure framework sizes in kB (without JMH overhead)..."
-# Map framework names (from JMH output) to their Maven Artifact IDs
-SIZE_UJORM=$(get_framework_size_kb "ujo-web")
-SIZE_J2HTML=$(get_framework_size_kb "j2html")
-SIZE_HTMLFLOW=$(get_framework_size_kb "htmlflow")
-SIZE_JTE=$(get_framework_size_kb "jte")
-SIZE_DOM4J=$(get_framework_size_kb "dom4j")
-SIZE_JSOUP=$(get_framework_size_kb "jsoup")
-SIZE_KOTLINX=$(get_framework_size_kb "kotlinx-html-jvm")
-SIZE_STRINGBUILDER="0" # Native JDK, no external dependencies
-
-# Export sizes so AWK can read them from environment variables
-export SIZE_UjormElement=$SIZE_UJORM
-export SIZE_J2html=$SIZE_J2HTML
-export SIZE_HtmlFlow=$SIZE_HTMLFLOW
-export SIZE_Jte=$SIZE_JTE
-export SIZE_Dom4j=$SIZE_DOM4J
-export SIZE_Jsoup=$SIZE_JSOUP
-export SIZE_KotlinxHtml=$SIZE_KOTLINX
-export SIZE_StringBuilder=$SIZE_STRINGBUILDER
-
 # 2. Run the benchmark, tee the output to both the console and the temporary log file
-echo "Running JMH benchmark..."
-# java -jar target/benchmarks.jar -prof gc | tee "$RAW_LOG"
-java --sun-misc-unsafe-memory-access=allow -jar target/benchmarks.jar -prof gc -jvmArgsAppend "--sun-misc-unsafe-memory-access=allow" | tee "$RAW_LOG"
+if [ "$1" = "test" ]; then
+    echo "Running JMH benchmark in TEST mode..."
+    java --sun-misc-unsafe-memory-access=allow -jar target/benchmarks.jar \
+        "HtmlBenchmark.benchmark.*" \
+        -p scenario=SIMPLE_10,SIMPLE_100,SIMPLE_1000,COMPLEX_100 \
+        -wi 0 \
+        -i 1 \
+        -r 1s \
+        -f 1 \
+        -prof gc \
+        -jvmArgsAppend "--sun-misc-unsafe-memory-access=allow" | tee "$RAW_LOG"
+else
+    echo "Running FULL JMH benchmark..."
+    java --sun-misc-unsafe-memory-access=allow -jar target/benchmarks.jar \
+        -prof gc \
+        -jvmArgsAppend "--sun-misc-unsafe-memory-access=allow" | tee "$RAW_LOG"
+fi
 
-# 3. Process the log using AWK to generate the CSV format (now with JAR Size in kB)
+# 3. Build CSV summary table in Java (scenario-aware and robust to JMH output formats)
 echo "Building the CSV summary table..."
-
-awk '
-BEGIN {
-    # Print the table header
-    print "Framework|Throughput [ops/s]|Allocation [B/op]|JAR Size [kB]"
-}
-/^HtmlBenchmark\.benchmark/ {
-    # Split the first column by colon to separate method name and metric
-    split($1, parts, ":")
-    method_part = parts[1]
-    metric = parts[2]
-
-    # Split the method_part by dot to get the actual benchmark name
-    split(method_part, subparts, ".")
-    framework = subparts[2]
-
-    # Remove the "benchmark" prefix
-    sub(/^benchmark/, "", framework)
-
-    # Store the parsed values
-    score = $4
-
-    if (metric == "") {
-        ops[framework] = score
-    } else if (metric == "gc.alloc.rate.norm") {
-        mem[framework] = score
-    }
-}
-END {
-    # Print the paired results for each framework including the size from ENV
-    for (f in ops) {
-        memory = (mem[f] != "") ? mem[f] : "?"
-
-        # Fetch the pre-calculated size from environment variables
-        env_var_name = "SIZE_" f
-        jar_size = ENVIRON[env_var_name]
-        if (jar_size == "") jar_size = "?"
-
-        print f "|" ops[f] "|" memory "|" jar_size
-    }
-}' "$RAW_LOG" > "$CSV_FILE"
+java -cp target/classes org.ujorm.benchmark.BenchmarkReportGenerator "$RAW_LOG" "$CSV_FILE"
 
 # 4. Display the final result
 echo "--------------------------------------------------------"
